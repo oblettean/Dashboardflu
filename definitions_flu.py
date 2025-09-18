@@ -2765,7 +2765,7 @@ def build_lot_stage_df_for_hist(df_in: pd.DataFrame, plaques: list[str] | None =
             continue
         lots, stages = extract_lot_and_stage_for_temoin(sub, temoin)
         sub["lot_id"] = lots
-        sub["stage"]  = pd.Series(stages).astype(str).str.lower()
+        sub["stage"] = pd.Series(stages, index=sub.index).astype(str).str.lower()
         sub = sub[sub["lot_id"].notna() & sub["stage"].isin(["probatoire","courant"])]
         out.append(sub[["plaque_id","sample_id","lot_id","stage"]])
     df_stage = pd.concat(out, ignore_index=True) if out else pd.DataFrame(columns=["plaque_id","sample_id","lot_id","stage"])
@@ -3642,6 +3642,7 @@ def add_icons_column_for_archives(df_in: pd.DataFrame, col_name: str = "__icons_
     # place __icons__ en première colonne
     cols = [col_name] + [c for c in df.columns if c != col_name]
     return df[cols]
+
 
 
 

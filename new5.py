@@ -697,7 +697,7 @@ with tab1:
                                                         parts.append(str(note).strip())
 
                                                     new_comment = " ; ".join(parts)
-                                                    base_df = _write_comment(pl, sid, new_comment)
+                                                    base_df = update_comment_and_persist(base_df, pl, sid, new_comment, DATA_FILE)
                                                     _mirror_to_current_tsv(pl, sid, new_comment)
                                                     # 🧾 journal dédié lots témoins
                                                     definitions_flu.log_temoin_lot_event(
@@ -766,7 +766,7 @@ with tab1:
                                                     if not any(cur_tag.lower() == p.lower() for p in parts):
                                                         parts.append(cur_tag)
                                                     new_comment = " ; ".join(parts)
-                                                    base_df = _write_comment(pl, sid, new_comment)
+                                                    base_df = update_comment_and_persist(base_df, pl, sid, new_comment, DATA_FILE)
                                                     _mirror_to_current_tsv(pl, sid, new_comment)
                                                     definitions_flu.log_temoin_lot_event(
                                                         temoin=pattern,
@@ -793,7 +793,7 @@ with tab1:
                                                             # supprime tout tag 'lot en cours XYZ' quel que soit XYZ
                                                             tokens = [t for t in tokens if not re.search(r"(?i)^lot\s*en\s*cours\s+\S+", t)]
                                                             new_comm_o = " ; ".join(tokens)
-                                                            base_df = _write_comment(pl_o, sid_o, new_comm_o)
+                                                            base_df = update_comment_and_persist(base_df, pl_o, sid_o, new_comm_o, DATA_FILE)
                                                             _mirror_to_current_tsv(pl_o, sid_o, new_comm_o)  # ⬅️ miroir mémoire
                                                 # Historique (optionnel)
                                                 try:

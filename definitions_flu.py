@@ -1475,6 +1475,7 @@ def _ensure_headroom(fig, data_peak=None, y_min=0.0, y_target_min=125.0):
     )
     return y_top
 
+
 # === Badges & helpers commentaires (PARTIE 3) =================================
 def comment_badges(run_id: str = "", plaque_id: str = "") -> str:
     """Construit un petit bandeau HTML avec un badge Run et/ou Plaque s'ils ont un commentaire simple."""
@@ -2133,44 +2134,33 @@ def add_comment_badges_on_fig(fig, df_temoin, temoin, x_col: str = "plaque_id"):
         b = str(b or "").strip().lower()
         return (a != "") and (a in b)
 
-        # 5b) fallback : parser nos 2 syntaxes ('Nouveau lot Témoin : X' ou 'nouveau lot X'), en ignorant 'autre nouveau lot'
-        if ("__lot__" not in s2.columns) or (s2["__lot__"].isna().all()):
-            def _parse_lot(txt: str):
-                t = str(txt or "")
-                if re.search(KIT_REGEX, t):  # ne pas confondre avec 🧪
-                    return None
-                m = re.search(r"nouveau\s*lot\s*t[ée]moin\s*[:\-]?\s*([A-Za-z0-9\-_\/]+)", t, flags=re.I)
-                if m:
-                    return m.group(1).strip()
-                # 'nouveau lot XXX' non précédé de 'autre '
-                # (negative lookbehind fixe, OK ici)
-                m = re.search(r"(?<!autre\s)(?:nouveau|nouvelle)\s*lot\s*[:\-]?\s*([A-Za-z0-9\-_\/]+)", t, flags=re.I)
-                if m:
-                    return m.group(1).strip()
-                return None
+    # 5) 🔁 Nouveau lot témoin — calcule les positions des badges
+    try:
+        df_stage = build_lot_stage_df_for_hist(sub)  # 'sub' = df_temoin filtré au-dessus
+        if df_stage is not None and not df_stage.empty:
+            df_stage["plaque_id"] = df_stage["plaque_id"].astype(str)
+            # Calcule les points candidats et garde seulement ceux avec probatoire AVANT (promotion)
+            pts = _lot_badge_points(df_stage.rename(columns={"plaque_id": xorder}), xorder_col=xorder)
+            pts = [p for p in pts if p[2] is True]  # p = (plaque_id, lot_id, has_prob_before)
 
-            s2["__lot__"] = s2["commentaire"].map(_parse_lot)
-
-        # 5c) propager vers l'avant pour détecter les changements (si besoin)
-        if s2["__lot__"].notna().any():
-            s2["__lot__"] = s2["__lot__"].ffill()
-            change_mask = s2["__lot__"].ne(s2["__lot__"].shift(1)) & s2["__lot__"].notna()
-            if change_mask.any():
-                marks = s2.loc[change_mask, [xorder, "__lot__"]]
-
-    if not marks.empty:
-        fig.add_trace(go.Scatter(
-            x=marks[xorder].astype(str),
-            y=[min(Y_LOT, _y_for_x(x, 10)) for x in marks[xorder]],
-            mode="markers+text",
-            marker=dict(size=20, opacity=0),
-            text=[ICON_LOT]*len(marks),
-            textposition="middle center",
-            textfont=dict(size=18),
-            hoverinfo="text",
-            hovertext=[f"Nouveau lot Témoin → {str(l)}" for l in marks["__lot__"]],
-            cliponaxis=False, showlegend=False, name="Nouveau lot Témoin"
-        ))
+            if pts:
+                xs_lot  = [str(p[0]) for p in pts]
+                hover_l = [f"Promotion du lot {p[1]}" for p in pts]
+                fig.add_trace(go.Scatter(
+                    x=xs_lot,
+                    y=[min(Y_LOT, _y_for_x(x, 10)) for x in xs_lot],
+                    mode="markers+text",
+                    marker=dict(size=20, opacity=0),
+                    text=["🔁"] * len(xs_lot),
+                    textposition="middle center",
+                    textfont=dict(size=18),
+                    hoverinfo="text",
+                    hovertext=hover_l,
+                    cliponaxis=False, showlegend=False, name="Promotion lot Témoin"
+                ))
+    except Exception:
+        # on ne casse pas l’affichage du graphe si l’extraction échoue
+        pass
 
     # 6) 💬 / 🧪 ÉCHANTILLONS (exclut miroirs + 'nouveau lot Témoin' + 'autre nouveau lot')
     sub["__c__"] = sub.get("commentaire", "").astype(str).fillna("").str.strip()
@@ -3041,10 +3031,6 @@ def plot_temoin_lots_s4s6_unique(
     - Gaps uniquement si S4 ou S6 manquent (⚠ posé sur la plaque).
     - Carry-forward: 'lot en cours <ID>' se propage jusqu’à 'lot en cours <J>' ou 'lot clos <ID>'.
     """
-    import re
-    import pandas as pd
-    import plotly.graph_objects as go
-
     need = {"sample_id","summary_consensus_perccoverage_S4","summary_consensus_perccoverage_S6","commentaire"}
     try:
         _ = temoin_df.columns
@@ -3642,7 +3628,6 @@ def add_icons_column_for_archives(df_in: pd.DataFrame, col_name: str = "__icons_
     # place __icons__ en première colonne
     cols = [col_name] + [c for c in df.columns if c != col_name]
     return df[cols]
-
 
 
 

@@ -436,7 +436,7 @@ def build_temoin_tiles_html(df_plaque: pd.DataFrame, df_history: pd.DataFrame = 
             # Mapping lot/stage à partir de l'HISTORIQUE (base_df / new_data_filtered)
             try:
                 sub_hist = df_hist[df_hist["sample_id"].astype(str).str.contains(pattern, case=False, na=False)].copy()
-                lots_hist, stages_hist = extract_lot_and_stage_for_temoin(sub_hist, pattern)
+                lots_hist, stages_hist, _ = extract_lot_and_stage_for_temoin(sub_hist, pattern)
                 lot_map   = dict(zip(sub_hist["sample_id"].astype(str), lots_hist))
                 stage_map = dict(zip(sub_hist["sample_id"].astype(str), stages_hist))
             except Exception:
@@ -2038,21 +2038,29 @@ def apply_comment_plate(
 def _lot_badge_points(df_stage: pd.DataFrame, xorder_col: str = "plaque_id"):
     if df_stage is None or df_stage.empty:
         return []
+    if "is_promotion" not in df_stage.columns:
+        df_stage = df_stage.copy()
+        df_stage["is_promotion"] = False
     cats = pd.Categorical(df_stage[xorder_col].astype(str))
     order = list(cats.categories) or df_stage[xorder_col].astype(str).unique().tolist()
     ord_map = {c: i for i, c in enumerate(order)}
     out = []
     for lot, sub in df_stage.groupby("lot_id", dropna=True):
         sub = sub.sort_values(xorder_col, key=lambda s: s.astype(str).map(ord_map.get))
-        cur = sub.loc[sub["stage"].astype(str).str.lower().eq("courant")]
-        if cur.empty:
-            continue
-        first_cur = str(cur.iloc[0][xorder_col])
+        promo_rows = sub.loc[sub["is_promotion"].astype(bool)] if "is_promotion" in sub.columns else pd.DataFrame()
+        badge_row = None
+        if promo_rows is not None and not promo_rows.empty:
+            badge_row = promo_rows.iloc[0]
+        else:
+            cur = sub.loc[sub["stage"].astype(str).str.lower().eq("courant")]
+            if cur.empty:
+                continue
+            badge_row = cur.iloc[0]
+        badge_x = str(badge_row[xorder_col])
         prob = sub.loc[sub["stage"].astype(str).str.lower().eq("probatoire"), xorder_col].astype(str)
-        has_prob_before = any(ord_map.get(p, 10**9) < ord_map.get(first_cur, -1) for p in prob)
-        out.append((first_cur, str(lot), bool(has_prob_before)))
+        has_prob_before = any(ord_map.get(p, 10**9) < ord_map.get(badge_x, -1) for p in prob)
+        out.append((badge_x, str(lot), bool(has_prob_before)))
     return out
-
 
 def add_comment_badges_on_fig(fig, df_temoin, temoin, x_col: str = "plaque_id"):
     """
@@ -2752,39 +2760,40 @@ def extract_lot_for_temoin(df_temoin: pd.DataFrame, temoin_code: str) -> list:
     return lots_out
 def build_lot_stage_df_for_hist(df_in: pd.DataFrame, plaques: list[str] | None = None) -> pd.DataFrame:
     if df_in is None or df_in.empty:
-        return pd.DataFrame(columns=["plaque_id","sample_id","lot_id","stage"])
+        return pd.DataFrame(columns=["plaque_id","sample_id","lot_id","stage","is_promotion"])
     out = []
     for temoin in ["TposH1","TposH3","TposB"]:
         sub = df_in[df_in["sample_id"].astype(str).str.contains(temoin, case=False, na=False)].copy()
         if sub.empty:
             continue
-        lots, stages = extract_lot_and_stage_for_temoin(sub, temoin)
+        lots, stages, promotions = extract_lot_and_stage_for_temoin(sub, temoin)
         sub["lot_id"] = lots
         sub["stage"] = pd.Series(stages, index=sub.index).astype(str).str.lower()
+        sub["is_promotion"] = pd.Series(promotions, index=sub.index).fillna(False).astype(bool)
         sub = sub[sub["lot_id"].notna() & sub["stage"].isin(["probatoire","courant"])]
-        out.append(sub[["plaque_id","sample_id","lot_id","stage"]])
-    df_stage = pd.concat(out, ignore_index=True) if out else pd.DataFrame(columns=["plaque_id","sample_id","lot_id","stage"])
+        out.append(sub[["plaque_id","sample_id","lot_id","stage","is_promotion"]])
+    df_stage = pd.concat(out, ignore_index=True) if out else pd.DataFrame(columns=["plaque_id","sample_id","lot_id","stage","is_promotion"])
     df_stage["plaque_id"] = df_stage["plaque_id"].astype(str)
     if plaques is not None:
         df_stage = df_stage[df_stage["plaque_id"].isin(set(map(str, plaques)))]
     return df_stage
 
 # === Nouveau : extraction "lot + état" pour un témoin (courant/probatoire)
-def extract_lot_and_stage_for_temoin(df_temoin: pd.DataFrame, temoin_code: str):
+def extract_lot_and_stage_for_temoin(df_temoin: pd.DataFrame, temoin_code: str):␊
     """
-    Renvoie (lot_actif, lot_stage) alignés à df_temoin pour un témoin.
-      lot_stage ∈ {'courant','probatoire', None}
+    Renvoie (lot_actif, lot_stage, is_promotion) alignés à df_temoin pour un témoin.
+      lot_stage {'courant','probatoire', None}
 
     Règles:
       • 'lot en cours <ID>' sur une plaque = promotion du <ID> à partir de CETTE plaque.
-        ➜ On trace à cette plaque: (1) l'ancien lot (dernier point) + (2) le lot promu (premier point).
+        ➜ On trace à cette plaque: (1) l'ancien lot (dernier point) + (2) le lot promu (premier point).␊
       • 'nouveau lot <ID>': si pas de courant encore → <ID> devient courant (pas de probatoire);
         sinon <ID> est probatoire.
       • Le probatoire se propage automatiquement plaque→plaque tant qu'il n'est pas promu.
       • Pas de propagation intra-plaque (on respecte les 2 lignes distinctes).
     """
     if df_temoin is None or df_temoin.empty:
-        return [None] * len(df_temoin), [None] * len(df_temoin)
+        return [None] * len(df_temoin), [None] * len(df_temoin), [False] * len(df_temoin)
 
     import re
     df = df_temoin.copy()
@@ -2800,6 +2809,7 @@ def extract_lot_and_stage_for_temoin(df_temoin: pd.DataFrame, temoin_code: str):
     idx = df.index
     lot_per_row   = pd.Series([None] * len(df), index=idx, dtype=object)
     stage_per_row = pd.Series([None] * len(df), index=idx, dtype=object)
+    promo_per_row = pd.Series([False] * len(df), index=idx, dtype=bool)
 
     TEMOIN_RE  = re.compile(re.escape(str(temoin_code)), re.I)
     NEW_RE = re.compile(r"(?:nouveau\s*lot(?:\s*t[ée]moin)?)\s*[:\-]?\s*([A-Za-z0-9][\w\-\/]*)",re.I)
@@ -2866,8 +2876,12 @@ def extract_lot_and_stage_for_temoin(df_temoin: pd.DataFrame, temoin_code: str):
                 if lot_id == promote_to:
                     promoted_index = i
                     break
+            if promoted_index is None and not g_tpos.empty:
+                promoted_index = g_tpos.index[0]
             probatoire_lot = None
 
+        if promote_to is not None and promoted_index is None and not g_tpos.empty:
+            promoted_index = g_tpos.index[0]
         prev_current = current_lot                  # ancien lot courant (avant éventuelle promotion)
         curr_target  = promote_to or current_lot    # lot courant à utiliser pour cette plaque
 
@@ -2905,7 +2919,7 @@ def extract_lot_and_stage_for_temoin(df_temoin: pd.DataFrame, temoin_code: str):
         for i in grp.index:
             sid = str(grp.loc[i].get("sample_id", ""))
             if not TEMOIN_RE.search(sid):
-                lot_per_row.at[i] = None; stage_per_row.at[i] = None
+                lot_per_row.at[i] = None; stage_per_row.at[i] = None; promo_per_row.at[i] = False
                 continue
 
             if promote_to:
@@ -2914,25 +2928,31 @@ def extract_lot_and_stage_for_temoin(df_temoin: pd.DataFrame, temoin_code: str):
                     # la ligne promue -> nouveau lot, courant
                     lot_per_row.at[i]   = promote_to
                     stage_per_row.at[i] = "courant"
+                    promo_per_row.at[i] = True
                 else:
                     if promote_all_rows:
                         lot_per_row.at[i]   = promote_to
                         stage_per_row.at[i] = "courant"
+                        promo_per_row.at[i] = (i == promoted_index)
                     else:
                         # l'autre ligne (ancien lot) -> dernier point de l'ancien lot
                         if prev_current:
                             lot_per_row.at[i]   = prev_current
                             stage_per_row.at[i] = "courant"
+                            promo_per_row.at[i] = False
                         else:
                             lot_per_row.at[i]   = None
                             stage_per_row.at[i] = None
+                            promo_per_row.at[i] = False
             else:
                 if i == prob_index and prob_target is not None:
                     lot_per_row.at[i]   = prob_target
                     stage_per_row.at[i] = "probatoire"
+                    promo_per_row.at[i] = False
                 else:
                     lot_per_row.at[i]   = curr_target
                     stage_per_row.at[i] = "courant" if curr_target else None
+                    promo_per_row.at[i] = False
 
         # Fin de plaque : appliquer la promotion pour la suite
         if promote_to:
@@ -2953,7 +2973,10 @@ def extract_lot_and_stage_for_temoin(df_temoin: pd.DataFrame, temoin_code: str):
             probatoire_lot = None
 
 
-    return lot_per_row.reindex(df_temoin.index).tolist(), stage_per_row.reindex(df_temoin.index).tolist()
+    lot_out = lot_per_row.reindex(df_temoin.index)
+    stage_out = stage_per_row.reindex(df_temoin.index)
+    promo_out = promo_per_row.reindex(df_temoin.index)
+    return lot_out.tolist(), stage_out.tolist(), promo_out.tolist()
     
 def known_lots(df: pd.DataFrame, temoin_code: str) -> list[str]:
     """
@@ -3079,12 +3102,14 @@ def plot_temoin_lots_s4s6_unique(
 
     # --- Lot + état ---
     try:
-        lots, stages = extract_lot_and_stage_for_temoin(sub, temoin)
+        lots, stages, promotions = extract_lot_and_stage_for_temoin(sub, temoin)
     except Exception:
         lots = extract_lot_for_temoin(sub, temoin)
         stages = [None] * len(sub)
+        promotions = [False] * len(sub)
     sub["lot_actif"] = lots
     sub["lot_stage"] = stages
+    sub["is_promotion"] = promotions
 
     # Carry-forward du "lot en cours"
     sub = sub.sort_values(by=["plaque_id"], key=lambda s: s.astype(str).str.extract(r"(\d+)").fillna("999999").astype(int)[0]).reset_index(drop=True)

@@ -2139,13 +2139,17 @@ def add_comment_badges_on_fig(fig, df_temoin, temoin, x_col: str = "plaque_id"):
         df_stage = build_lot_stage_df_for_hist(sub)  # 'sub' = df_temoin filtré au-dessus
         if df_stage is not None and not df_stage.empty:
             df_stage["plaque_id"] = df_stage["plaque_id"].astype(str)
-            # Calcule les points candidats et garde seulement ceux avec probatoire AVANT (promotion)
+            # Calcule les points candidats (promotion ou début de lot courant)
             pts = _lot_badge_points(df_stage.rename(columns={"plaque_id": xorder}), xorder_col=xorder)
-            pts = [p for p in pts if p[2] is True]  # p = (plaque_id, lot_id, has_prob_before)
 
             if pts:
                 xs_lot  = [str(p[0]) for p in pts]
-                hover_l = [f"Promotion du lot {p[1]}" for p in pts]
+                hover_l = [
+                    (
+                        "Promotion du lot" if p[2] else "Début de lot (courant immédiat)"
+                    ) + f" {p[1]}"
+                    for p in pts
+                ]
                 fig.add_trace(go.Scatter(
                     x=xs_lot,
                     y=[min(Y_LOT, _y_for_x(x, 10)) for x in xs_lot],
@@ -2588,10 +2592,11 @@ def assign_lots_from_commentaires(df):
         group_index = group.index
         new_lots = {}
         for i, idx in enumerate(group_index):
-            commentaire = str(group.loc[idx, 'commentaire']).lower()
-            match = re.search(r"lot\s*(\d+)", commentaire)
+            raw_comment = str(group.loc[idx, 'commentaire'])
+            commentaire = raw_comment.lower()
+            match = re.search(r"lot\s*([A-Za-z0-9][A-Za-z0-9_/-]*)", raw_comment, flags=re.IGNORECASE)
             if ('nouveau' in commentaire or 'nouvelle' in commentaire) and match:
-                new_lots[i] = match.group(1)
+                new_lots[i] = match.group(1).strip()
         group_lots = [None] * len(group_index)
         for i, idx in enumerate(group_index):
             if i in new_lots:
@@ -3161,33 +3166,7 @@ def plot_temoin_lots_s4s6_unique(
                 showlegend=False, hoverinfo="skip"
             ))
 
-        # Badge 🔁 si une plaque probatoire existe AVANT la première plaque courante
-        # Badge 🔁 : 
-        # - s’il y a eu probatoire avant la 1ère plaque courante ⇒ 🔁 = Promotion
-        # - sinon ⇒ 🔁 = Début de lot (courant immédiat)
-        if (not c.empty):
-            ord_map = {pid: i for i, pid in enumerate(cat_order)}
-            first_cur = c["plaque_id"].iloc[0]
-            # y au-dessus du max(S4,S6) sur cette plaque
-            row = m[m["plaque_id"].eq(first_cur)]
-            y_top = float(pd.Series([row["S4_all"].iloc[0], row["S6_all"].iloc[0]]).max()) if not row.empty else seuil
 
-            has_prob_before = False
-            if not p.empty:
-                has_prob_before = any(
-                    ord_map.get(pid, 10**9) < ord_map.get(first_cur, -1) 
-                    for pid in p["plaque_id"]
-                )
-
-            fig.add_trace(go.Scatter(
-                x=[first_cur], y=[y_top + 6.0], mode="markers+text",
-                marker=dict(size=20, opacity=0),
-                text=["🔁"], textposition="middle center",
-                textfont=dict(size=18),
-                hoverinfo="text",
-                hovertext=[f"{'Promotion du lot' if has_prob_before else 'Début de lot (courant immédiat)'} {lot}"],
-                cliponaxis=False, showlegend=False
-            ))
 
     # Re-run (×n)
     counts = sub.groupby("plaque_id").size()

@@ -588,10 +588,6 @@ with tab1:
                                         else:
                                             return df_t_uniq.copy()
 
-                                    def _write_comment(pl: str, sid: str, new_comment: str):
-                                        """Écrit/persiste le commentaire pour (plaque, sample) dans base_df + CSV."""
-                                        return update_comment_and_persist(base_df, pl, sid, new_comment, DATA_FILE)
-
                                     def _mirror_to_current_tsv(pl: str, sid: str, new_comment: str):
                                         """Miroir en mémoire : met à jour aussi new_data_filtered pour le *même TSV*."""
                                         try:

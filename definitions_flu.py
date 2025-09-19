@@ -2048,18 +2048,30 @@ def _lot_badge_points(df_stage: pd.DataFrame, xorder_col: str = "plaque_id"):
     for lot, sub in df_stage.groupby("lot_id", dropna=True):
         sub = sub.sort_values(xorder_col, key=lambda s: s.astype(str).map(ord_map.get))
         promo_rows = sub.loc[sub["is_promotion"].astype(bool)] if "is_promotion" in sub.columns else pd.DataFrame()
-        badge_row = None
+        badge_rows = []
         if promo_rows is not None and not promo_rows.empty:
-            badge_row = promo_rows.iloc[0]
+            badge_rows = promo_rows.to_dict("records")
         else:
             cur = sub.loc[sub["stage"].astype(str).str.lower().eq("courant")]
             if cur.empty:
                 continue
-            badge_row = cur.iloc[0]
-        badge_x = str(badge_row[xorder_col])
+            badge_rows = [cur.iloc[0].to_dict()]
+
         prob = sub.loc[sub["stage"].astype(str).str.lower().eq("probatoire"), xorder_col].astype(str)
-        has_prob_before = any(ord_map.get(p, 10**9) < ord_map.get(badge_x, -1) for p in prob)
-        out.append((badge_x, str(lot), bool(has_prob_before)))
+        seen = set()
+
+        for badge_row in badge_rows:
+            badge_x_val = badge_row.get(xorder_col)
+            if badge_x_val is None or (isinstance(badge_x_val, float) and pd.isna(badge_x_val)):
+                continue
+            badge_x = str(badge_x_val)
+            key = (str(lot), badge_x)
+            if key in seen:
+                continue
+            seen.add(key)
+            badge_ord = ord_map.get(badge_x, -1)
+            has_prob_before = any(ord_map.get(p, 10**9) < badge_ord for p in prob)
+            out.append((badge_x, str(lot), bool(has_prob_before)))
     return out
 
 def add_comment_badges_on_fig(fig, df_temoin, temoin, x_col: str = "plaque_id"):
@@ -2779,7 +2791,7 @@ def build_lot_stage_df_for_hist(df_in: pd.DataFrame, plaques: list[str] | None =
     return df_stage
 
 # === Nouveau : extraction "lot + état" pour un témoin (courant/probatoire)
-def extract_lot_and_stage_for_temoin(df_temoin: pd.DataFrame, temoin_code: str):␊
+def extract_lot_and_stage_for_temoin(df_temoin: pd.DataFrame, temoin_code: str):
     """
     Renvoie (lot_actif, lot_stage, is_promotion) alignés à df_temoin pour un témoin.
       lot_stage {'courant','probatoire', None}

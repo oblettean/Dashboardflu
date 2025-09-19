@@ -467,14 +467,14 @@ with tab1:
                             # Une tuile par Tpos unique (empilées si duplicat réel)
                             # Lot associé à chaque tuile (sur la plaque courante)
                             # On garde l’ordre d’itération de df_t_uniq
-                             try:
+                            try:
                                 lots_line, stages_line, _ = definitions_flu.extract_lot_and_stage_for_temoin(df_t_uniq, pattern)
                             except Exception:
                                 lots_line = [None] * len(df_t_uniq)
                                 stages_line = [None] * len(df_t_uniq)
                             # Historique global pour ce témoin (base_df)
                             try:
-                                sub_hist = base_df[base_df["sample_id"].astype(str).str.contains(pattern, case=False, na=False)].copy()␊
+                                sub_hist = base_df[base_df["sample_id"].astype(str).str.contains(pattern, case=False, na=False)].copy()
                                 lots_hist, _, _ = definitions_flu.extract_lot_and_stage_for_temoin(sub_hist, pattern)
                                 lot_map = dict(zip(sub_hist["sample_id"].astype(str), lots_hist))
                             except Exception:

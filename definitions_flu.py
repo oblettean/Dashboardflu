@@ -2813,7 +2813,9 @@ def extract_lot_and_stage_for_temoin(df_temoin: pd.DataFrame, temoin_code: str):
     last_prob_sid  = None     # sample_id préféré pour recoller le probatoire
     closed_lots = set()
 
+    promote_all_rows = False
     for _, grp in df.groupby(xorder, sort=False):
+        promote_all_rows = False
         g_tpos = grp[grp["sample_id"].astype(str).str.contains(TEMOIN_RE, na=False)]
 
         # Détections dans la plaque
@@ -2838,6 +2840,8 @@ def extract_lot_and_stage_for_temoin(df_temoin: pd.DataFrame, temoin_code: str):
                     if promoted_index is None:
                         promoted_index = i
             mnew_tpos = NEW_TPOS_PROMOTE_RE.search(c)
+            if mnew_tpos:
+                promote_all_rows = True
             if mnew_tpos and (promote_to is None):
                 # Mode "correction" : un "Nouveau lot Témoin : X" depuis l’outil commentaire
                 # fait devenir X "courant" immédiatement sur CETTE plaque,
@@ -2911,13 +2915,17 @@ def extract_lot_and_stage_for_temoin(df_temoin: pd.DataFrame, temoin_code: str):
                     lot_per_row.at[i]   = promote_to
                     stage_per_row.at[i] = "courant"
                 else:
-                    # l'autre ligne (ancien lot) -> dernier point de l'ancien lot
-                    if prev_current:
-                        lot_per_row.at[i]   = prev_current
+                    if promote_all_rows:
+                        lot_per_row.at[i]   = promote_to
                         stage_per_row.at[i] = "courant"
                     else:
-                        lot_per_row.at[i]   = None
-                        stage_per_row.at[i] = None
+                        # l'autre ligne (ancien lot) -> dernier point de l'ancien lot
+                        if prev_current:
+                            lot_per_row.at[i]   = prev_current
+                            stage_per_row.at[i] = "courant"
+                        else:
+                            lot_per_row.at[i]   = None
+                            stage_per_row.at[i] = None
             else:
                 if i == prob_index and prob_target is not None:
                     lot_per_row.at[i]   = prob_target
